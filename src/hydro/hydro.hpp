@@ -130,6 +130,11 @@ ReconCells(const Pack_t &v, const IdxRange_t &halo_range, delta_t delta, scratch
                 v(var, kji + delta), v(var, kji + 2 * delta), pl, mn);
     });
     break;
+  case RR::Type::WENO3:
+    for_all([&](auto var, auto kji, Real &pl, Real &mn) {
+      RR::WENO3(v(var, kji - delta), v(var, kji),v(var, kji + delta), pl, mn);
+    });
+    break;
   case RR::Type::MP5:
     for_all([&](auto var, auto kji, Real &pl, Real &mn) {
       RR::MP5(v(var, kji - 2 * delta), v(var, kji - delta), v(var, kji),
@@ -176,6 +181,11 @@ KOKKOS_INLINE_FUNCTION void ReconVar(const VarView_t &q, const IdxRange_t &halo_
     for_all([&](auto kji, Real &pl, Real &mn) {
       RR::WENO5(q(kji - 2 * delta), q(kji - delta), q(kji), q(kji + delta),
                 q(kji + 2 * delta), pl, mn);
+    });
+    break;
+  case RR::Type::WENO3:
+    for_all([&](auto kji, Real &pl, Real &mn) {
+      RR::WENO3(q(kji - delta), q(kji), q(kji + delta), pl, mn);
     });
     break;
   case RR::Type::MP5:

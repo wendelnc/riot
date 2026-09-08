@@ -25,7 +25,7 @@
 
 namespace RiotReconstruction {
 
-enum class Type { CONSTANT, PLM, PPM4, WENO5, MP5 };
+enum class Type { CONSTANT, PLM, PPM4, WENO5, MP5, WENO3 };
 // JMM: Would be more efficient to use an array, but this is more
 // convenient and it doesn't matter. This is only used at
 // initialization.
@@ -33,14 +33,15 @@ const std::unordered_map<Type, int> STENCIL_WIDTH = {{Type::CONSTANT, 0},
                                                      {Type::PLM, 1},
                                                      {Type::PPM4, 2},
                                                      {Type::WENO5, 2},
-                                                     {Type::MP5, 2}};
+                                                     {Type::MP5, 2},
+                                                     {Type::WENO3, 1}};
 // Note these must be explicitly upper-case
 const std::unordered_map<std::string, Type> NAME_MAP = {{"CONSTANT", Type::CONSTANT},
                                                         {"PLM", Type::PLM},
                                                         {"PPM4", Type::PPM4},
                                                         {"WENO5", Type::WENO5},
-                                                        {"MP5", Type::MP5}};
-
+                                                        {"MP5", Type::MP5},
+                                                        {"WENO3", Type::WENO3}};
 //----------------------------------------------------------------------------------------
 //! \fn  Real RiotReconstruction::mc
 //! \brief
@@ -305,6 +306,65 @@ KOKKOS_INLINE_FUNCTION void WENO5Z(const Real q0, const Real q1, const Real q2,
 KOKKOS_FORCEINLINE_FUNCTION void WENO5(const Real q0, const Real q1, const Real q2,
                                        const Real q3, const Real q4, Real &ql, Real &qr) {
   WENO5Z(q0, q1, q2, q3, q4, ql, qr);
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn  void RiotReconstruction::WENO3JS
+//! \brief
+#pragma omp declare simd
+KOKKOS_INLINE_FUNCTION void WENO3JS(const Real q_im1, const Real q_i, const Real q_ip1,
+                                    Real &ql, Real &qr) {
+
+  const Real epsilon = 1E-6;
+
+  Real beta[2]; // (2.62) 
+  beta[0] = SQR(q_ip1 - q_i);
+  beta[1] = SQR(q_i - q_im1);
+
+  Real indicator[2]; // fraction part of (2.59) 
+  indicator[0] = 1 / SQR(epsilon + beta[0]);
+  indicator[1] = 1 / SQR(epsilon + beta[1]);
+
+  // compute qL_ip1
+  Real f[2]; // (15) in YC09
+  // Factor of 1/2 in coefficients of f[] array applied to alpha_sum to reduce divisions
+  f[0] = q_i + q_ip1;
+  f[1] = -q_im1 + 3.0 * q_i;
+
+  Real alpha[2]; // (2.59)
+  alpha[0] = indicator[0] * 2.0 / 3.0;
+  alpha[1] = indicator[1] * 1.0 / 3.0;
+
+  // ENO Weights
+  // alpha[0] = 2.0 / 3.0;
+  // alpha[1] = 1.0 / 3.0;
+
+  Real alpha_sum = 2.0 * (alpha[0] + alpha[1]);
+
+  ql = (alpha[0] * f[0] + alpha[1] * f[1]) / alpha_sum; // (2.52) 
+
+  // compute qR_i -- same as qL_ip1 just with mirrored input values
+  // Factor of 1/2 in coefficients of f[] array applied to alpha_sum to reduce divisions
+  f[0] = q_i + q_im1;
+  f[1] = -q_ip1 + 3.0 * q_i;
+
+  alpha[0] = indicator[1] * 2.0 / 3.0;
+  alpha[1] = indicator[0] * 1.0 / 3.0;
+
+  alpha_sum = 2.0 * (alpha[0] + alpha[1]);
+
+  qr = (alpha[0] * f[0] + alpha[1] * f[1]) / alpha_sum; // (2.52) 
+
+
+}
+
+//----------------------------------------------------------------------------------------
+//! \fn  void RiotReconstruction::WENO3JS
+//! \brief
+#pragma omp declare simd
+KOKKOS_FORCEINLINE_FUNCTION void WENO3(const Real q_im1, const Real q_i, const Real q_ip1,
+                                       Real &ql, Real &qr) {
+  WENO3JS(q_im1, q_i, q_ip1, ql, qr);
 }
 
 //----------------------------------------------------------------------------------------
