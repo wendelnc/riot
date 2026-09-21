@@ -466,6 +466,72 @@ AdvectionFluxes(const Pack_t &v, const AdvPack_t &adv, const IdxRange &idx_range
   }
 }
 
+
+//----------------------------------------------------------------------------------------
+//! \fn  void Hydro::set_sound_and_update_velocity
+//! \brief Apply Thornber's low Mach correction if LM_CORRECTION == true 
+template <parthenon::CoordinateDirection DIR, 
+          typename IdxRange, typename Delta, typename SetBulk, typename SumBulk>
+KOKKOS_INLINE_FUNCTION void
+set_sound_and_update_velocity(const IdxRange &idx_range, Delta delta,
+                  SetBulk &set_bulk_minus, SetBulk &set_bulk_plus,
+                  const SumBulk &sum_bulk_minus, const SumBulk &sum_bulk_plus) {
+  namespace ccbulk = cell_variables::cell_averaged::bulk;
+  RiotLoop::inner(idx_range, [&](const auto kji) {
+    const auto kji_L = kji - delta;
+    const auto kji_R = kji;
+
+    const Real cs_L = BulkSoundSpeed(set_bulk_plus(ccbulk::bulk_modulus(), kji_L),
+                                     sum_bulk_plus(ccbulk::rho(), kji_L));
+    const Real cs_R = BulkSoundSpeed(set_bulk_minus(ccbulk::bulk_modulus(), kji_R),
+                                     sum_bulk_minus(ccbulk::rho(), kji_R));
+
+    const Real vmag_L = std::sqrt(SQR(set_bulk_plus(ccbulk::velocity(0), kji_L)) + 
+                                  SQR(set_bulk_plus(ccbulk::velocity(1), kji_L)) + 
+                                  SQR(set_bulk_plus(ccbulk::velocity(2), kji_L)));   
+    //TODO static constexpr Real SAFETY = 1e-4;                      
+    const Real Ma_L = vmag_L / (cs_L + 1.e-16);                      
+
+    const Real vmag_R = std::sqrt(SQR(set_bulk_minus(ccbulk::velocity(0), kji_R)) + 
+                                  SQR(set_bulk_minus(ccbulk::velocity(1), kji_R)) + 
+                                  SQR(set_bulk_minus(ccbulk::velocity(2), kji_R))); 
+                          
+    const Real Ma_R = vmag_R / (cs_R + 1.e-16); 
+
+    const Real coeff = std::min(std::max(Ma_L, Ma_R), 1.0);
+
+    if constexpr (DIR == X1DIR) {
+
+      const Real vL = set_bulk_plus(ccbulk::velocity(0), kji_L);
+      const Real vR = set_bulk_minus(ccbulk::velocity(0), kji_R);
+      const Real vavg = 0.5 * (vL + vR);
+      const Real dv   = 0.5 * (vL - vR);
+      set_bulk_plus(ccbulk::velocity(0), kji_L) = vavg + coeff * dv;
+      set_bulk_minus(ccbulk::velocity(0), kji_R) = vavg - coeff * dv;
+
+    } else if constexpr (DIR == X2DIR) {
+
+      const Real vL = set_bulk_plus(ccbulk::velocity(1), kji_L);
+      const Real vR = set_bulk_minus(ccbulk::velocity(1), kji_R);
+      const Real vavg = 0.5 * (vL + vR);
+      const Real dv   = 0.5 * (vL - vR);
+      set_bulk_plus(ccbulk::velocity(1), kji_L) = vavg + coeff * dv;
+      set_bulk_minus(ccbulk::velocity(1), kji_R) = vavg - coeff * dv;
+
+    } else if constexpr (DIR == X3DIR) {
+
+      const Real vL = set_bulk_plus(ccbulk::velocity(2), kji_L);
+      const Real vR = set_bulk_minus(ccbulk::velocity(2), kji_R);
+      const Real vavg = 0.5 * (vL + vR);
+      const Real dv   = 0.5 * (vL - vR);
+      set_bulk_plus(ccbulk::velocity(2), kji_L) = vavg + coeff * dv;
+      set_bulk_minus(ccbulk::velocity(2), kji_R) = vavg - coeff * dv;
+
+    }
+  });
+}
+
+
 //----------------------------------------------------------------------------------------
 //! \fn  void Hydro::CalculateFluxesImpl
 //! \brief Templated single-direction flux calculation. Reconstructs bulk and per-material
@@ -478,7 +544,8 @@ void CalculateFluxesImpl(MeshData<Real> *md, const Pack_t &v, const StrPack_t &v
                          const AdvPack_t &adv, const RiotReconstruction::Type recon_tag,
                          const RiotReconstruction::Type vfrac_recon_tag,
                          const RiemannSolver rsolver_tag, const bool store_vf,
-                         const StrengthArr &mat_strength, const bool do_viscosity) {
+                         const StrengthArr &mat_strength, const bool do_viscosity, 
+                         const bool do_lm_correction) {
   namespace ccbulk = cell_variables::cell_averaged::bulk;
   namespace ccmat = cell_variables::cell_averaged::mat;
   namespace cm = cell_variables::material_averaged;
@@ -655,6 +722,12 @@ void CalculateFluxesImpl(MeshData<Real> *md, const Pack_t &v, const StrPack_t &v
         auto dvn = GetPerPointScratch<Real>(idx_range);
         auto dvt = GetPerPointScratch<Real>(idx_range);
         constexpr int dir = static_cast<int>(DIR);
+
+        if (do_lm_correction) {
+          set_sound_and_update_velocity<DIR>(
+            idx_range, delta, set_bulk_minus, set_bulk_plus, sum_bulk_minus, sum_bulk_plus);
+        }
+
         switch (rsolver_tag) {
         case RiemannSolver::hllc:
           BulkRiemannFluxes<DIR, lr_to_flux_hllc<dir>>(
@@ -735,6 +808,7 @@ TaskStatus CalculateFluxes(MeshData<Real> *md) {
   auto rsolver_tag = options->Param<RiemannSolver>("riemann_solver");
   const bool do_strength = pm->packages.Get("riot")->Param<bool>("do_strength");
   if (do_strength) rsolver_tag = RiemannSolver::strong;
+  const bool do_lm_correction = options->Param<bool>("lm_correction");
   const bool store_vf = options->Param<bool>("store_vf");
   const auto &mat_strength =
       pm->packages.Get("materials")->Param<parthenon::ParArray1D<bool>>("d.strong");
@@ -772,13 +846,13 @@ TaskStatus CalculateFluxes(MeshData<Real> *md) {
   auto adv = MakeAdvectionPack(md);
 
   CalculateFluxesImpl<X1DIR>(md, v, vstr, adv, recon_tag, vfrac_recon_tag, rsolver_tag,
-                             store_vf, mat_strength, do_viscosity);
+                             store_vf, mat_strength, do_viscosity, do_lm_correction);
   if (ndim > 1)
     CalculateFluxesImpl<X2DIR>(md, v, vstr, adv, recon_tag, vfrac_recon_tag, rsolver_tag,
-                               store_vf, mat_strength, do_viscosity);
+                               store_vf, mat_strength, do_viscosity, do_lm_correction);
   if (ndim > 2)
     CalculateFluxesImpl<X3DIR>(md, v, vstr, adv, recon_tag, vfrac_recon_tag, rsolver_tag,
-                               store_vf, mat_strength, do_viscosity);
+                               store_vf, mat_strength, do_viscosity, do_lm_correction);
 
   return TaskStatus::complete;
 }
