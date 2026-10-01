@@ -100,6 +100,7 @@ set (SRC_LIST
   riot_pgen/gresho.cpp
   riot_pgen/hse.cpp
   riot_pgen/ionized_shocktube_analytic.cpp
+  riot_pgen/kh.cpp
   riot_pgen/linear_modes.hpp
   riot_pgen/linear_modes.cpp
   riot_pgen/pgen.hpp
