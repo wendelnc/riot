@@ -473,7 +473,7 @@ AdvectionFluxes(const Pack_t &v, const AdvPack_t &adv, const IdxRange &idx_range
 template <parthenon::CoordinateDirection DIR, 
           typename IdxRange, typename Delta, typename SetBulk, typename SumBulk>
 KOKKOS_INLINE_FUNCTION void
-set_sound_and_update_velocity(const IdxRange &idx_range, Delta delta,
+set_sound_and_update_velocity(const int lm_dir, const IdxRange &idx_range, Delta delta,
                   SetBulk &set_bulk_minus, SetBulk &set_bulk_plus,
                   const SumBulk &sum_bulk_minus, const SumBulk &sum_bulk_plus) {
   namespace ccbulk = cell_variables::cell_averaged::bulk;
@@ -489,7 +489,6 @@ set_sound_and_update_velocity(const IdxRange &idx_range, Delta delta,
     const Real vmag_L = std::sqrt(SQR(set_bulk_plus(ccbulk::velocity(0), kji_L)) + 
                                   SQR(set_bulk_plus(ccbulk::velocity(1), kji_L)) + 
                                   SQR(set_bulk_plus(ccbulk::velocity(2), kji_L)));   
-    //TODO static constexpr Real SAFETY = 1e-4;                      
     const Real Ma_L = vmag_L / (cs_L + 1.e-16);                      
 
     const Real vmag_R = std::sqrt(SQR(set_bulk_minus(ccbulk::velocity(0), kji_R)) + 
@@ -498,36 +497,95 @@ set_sound_and_update_velocity(const IdxRange &idx_range, Delta delta,
                           
     const Real Ma_R = vmag_R / (cs_R + 1.e-16); 
 
+    // static constexpr Real SAFETY = 1e-4;
+    // const Real coeff = std::max(SAFETY, std::min(std::max(Ma_L, Ma_R), 1.0));
+                        
     const Real coeff = std::min(std::max(Ma_L, Ma_R), 1.0);
 
-    if constexpr (DIR == X1DIR) {
+    if (lm_dir == 1) { 
 
-      const Real vL = set_bulk_plus(ccbulk::velocity(0), kji_L);
-      const Real vR = set_bulk_minus(ccbulk::velocity(0), kji_R);
-      const Real vavg = 0.5 * (vL + vR);
-      const Real dv   = 0.5 * (vL - vR);
+      if constexpr (DIR == X1DIR) {
+        const Real vL = set_bulk_plus(ccbulk::velocity(0), kji_L);
+        const Real vR = set_bulk_minus(ccbulk::velocity(0), kji_R);
+        const Real vavg = 0.5 * (vL + vR);
+        const Real dv   = 0.5 * (vL - vR);
+        set_bulk_plus(ccbulk::velocity(0), kji_L) = vavg + coeff * dv;
+        set_bulk_minus(ccbulk::velocity(0), kji_R) = vavg - coeff * dv;
+
+      } else if constexpr (DIR == X2DIR) {
+        const Real vL = set_bulk_plus(ccbulk::velocity(1), kji_L);
+        const Real vR = set_bulk_minus(ccbulk::velocity(1), kji_R);
+        const Real vavg = 0.5 * (vL + vR);
+        const Real dv   = 0.5 * (vL - vR);
+        set_bulk_plus(ccbulk::velocity(1), kji_L) = vavg + coeff * dv;
+        set_bulk_minus(ccbulk::velocity(1), kji_R) = vavg - coeff * dv;
+
+      } else if constexpr (DIR == X3DIR) {
+        const Real vL = set_bulk_plus(ccbulk::velocity(2), kji_L);
+        const Real vR = set_bulk_minus(ccbulk::velocity(2), kji_R);
+        const Real vavg = 0.5 * (vL + vR);
+        const Real dv   = 0.5 * (vL - vR);
+        set_bulk_plus(ccbulk::velocity(2), kji_L) = vavg + coeff * dv;
+        set_bulk_minus(ccbulk::velocity(2), kji_R) = vavg - coeff * dv;
+      }
+
+    }
+
+    if (lm_dir == 3) {
+      
+      Real vL = set_bulk_plus(ccbulk::velocity(0), kji_L);
+      Real vR = set_bulk_minus(ccbulk::velocity(0), kji_R);
+      Real vavg = 0.5 * (vL + vR);
+      Real dv   = 0.5 * (vL - vR);
       set_bulk_plus(ccbulk::velocity(0), kji_L) = vavg + coeff * dv;
       set_bulk_minus(ccbulk::velocity(0), kji_R) = vavg - coeff * dv;
 
-    } else if constexpr (DIR == X2DIR) {
-
-      const Real vL = set_bulk_plus(ccbulk::velocity(1), kji_L);
-      const Real vR = set_bulk_minus(ccbulk::velocity(1), kji_R);
-      const Real vavg = 0.5 * (vL + vR);
-      const Real dv   = 0.5 * (vL - vR);
+      vL = set_bulk_plus(ccbulk::velocity(1), kji_L);
+      vR = set_bulk_minus(ccbulk::velocity(1), kji_R);
+      vavg = 0.5 * (vL + vR);
+      dv   = 0.5 * (vL - vR);
       set_bulk_plus(ccbulk::velocity(1), kji_L) = vavg + coeff * dv;
       set_bulk_minus(ccbulk::velocity(1), kji_R) = vavg - coeff * dv;
 
-    } else if constexpr (DIR == X3DIR) {
-
-      const Real vL = set_bulk_plus(ccbulk::velocity(2), kji_L);
-      const Real vR = set_bulk_minus(ccbulk::velocity(2), kji_R);
-      const Real vavg = 0.5 * (vL + vR);
-      const Real dv   = 0.5 * (vL - vR);
+      vL = set_bulk_plus(ccbulk::velocity(2), kji_L);
+      vR = set_bulk_minus(ccbulk::velocity(2), kji_R);
+      vavg = 0.5 * (vL + vR);
+      dv   = 0.5 * (vL - vR);
       set_bulk_plus(ccbulk::velocity(2), kji_L) = vavg + coeff * dv;
       set_bulk_minus(ccbulk::velocity(2), kji_R) = vavg - coeff * dv;
 
     }
+
+    // if constexpr (DIR == X1DIR) {
+
+    //   const Real vL = set_bulk_plus(ccbulk::velocity(0), kji_L);
+    //   const Real vR = set_bulk_minus(ccbulk::velocity(0), kji_R);
+    //   const Real vavg = 0.5 * (vL + vR);
+    //   const Real dv   = 0.5 * (vL - vR);
+    //   set_bulk_plus(ccbulk::velocity(0), kji_L) = vavg + coeff * dv;
+    //   set_bulk_minus(ccbulk::velocity(0), kji_R) = vavg - coeff * dv;
+
+    // } else if constexpr (DIR == X2DIR) {
+
+    //   const Real vL = set_bulk_plus(ccbulk::velocity(1), kji_L);
+    //   const Real vR = set_bulk_minus(ccbulk::velocity(1), kji_R);
+    //   const Real vavg = 0.5 * (vL + vR);
+    //   const Real dv   = 0.5 * (vL - vR);
+    //   set_bulk_plus(ccbulk::velocity(1), kji_L) = vavg + coeff * dv;
+    //   set_bulk_minus(ccbulk::velocity(1), kji_R) = vavg - coeff * dv;
+
+    // } else if constexpr (DIR == X3DIR) {
+
+    //   const Real vL = set_bulk_plus(ccbulk::velocity(2), kji_L);
+    //   const Real vR = set_bulk_minus(ccbulk::velocity(2), kji_R);
+    //   const Real vavg = 0.5 * (vL + vR);
+    //   const Real dv   = 0.5 * (vL - vR);
+    //   set_bulk_plus(ccbulk::velocity(2), kji_L) = vavg + coeff * dv;
+    //   set_bulk_minus(ccbulk::velocity(2), kji_R) = vavg - coeff * dv;
+
+    // }
+
+
   });
 }
 
@@ -545,7 +603,7 @@ void CalculateFluxesImpl(MeshData<Real> *md, const Pack_t &v, const StrPack_t &v
                          const RiotReconstruction::Type vfrac_recon_tag,
                          const RiemannSolver rsolver_tag, const bool store_vf,
                          const StrengthArr &mat_strength, const bool do_viscosity, 
-                         const bool do_lm_correction) {
+                         const bool do_lm_correction, const int lm_dir) {
   namespace ccbulk = cell_variables::cell_averaged::bulk;
   namespace ccmat = cell_variables::cell_averaged::mat;
   namespace cm = cell_variables::material_averaged;
@@ -725,7 +783,7 @@ void CalculateFluxesImpl(MeshData<Real> *md, const Pack_t &v, const StrPack_t &v
 
         if (do_lm_correction) {
           set_sound_and_update_velocity<DIR>(
-            idx_range, delta, set_bulk_minus, set_bulk_plus, sum_bulk_minus, sum_bulk_plus);
+            lm_dir, idx_range, delta, set_bulk_minus, set_bulk_plus, sum_bulk_minus, sum_bulk_plus);
         }
 
         switch (rsolver_tag) {
@@ -809,6 +867,7 @@ TaskStatus CalculateFluxes(MeshData<Real> *md) {
   const bool do_strength = pm->packages.Get("riot")->Param<bool>("do_strength");
   if (do_strength) rsolver_tag = RiemannSolver::strong;
   const bool do_lm_correction = options->Param<bool>("lm_correction");
+  const int lm_dir = options->Param<int>("lm_dir");
   const bool store_vf = options->Param<bool>("store_vf");
   const auto &mat_strength =
       pm->packages.Get("materials")->Param<parthenon::ParArray1D<bool>>("d.strong");
@@ -846,13 +905,13 @@ TaskStatus CalculateFluxes(MeshData<Real> *md) {
   auto adv = MakeAdvectionPack(md);
 
   CalculateFluxesImpl<X1DIR>(md, v, vstr, adv, recon_tag, vfrac_recon_tag, rsolver_tag,
-                             store_vf, mat_strength, do_viscosity, do_lm_correction);
+                             store_vf, mat_strength, do_viscosity, do_lm_correction, lm_dir);
   if (ndim > 1)
     CalculateFluxesImpl<X2DIR>(md, v, vstr, adv, recon_tag, vfrac_recon_tag, rsolver_tag,
-                               store_vf, mat_strength, do_viscosity, do_lm_correction);
+                               store_vf, mat_strength, do_viscosity, do_lm_correction, lm_dir);
   if (ndim > 2)
     CalculateFluxesImpl<X3DIR>(md, v, vstr, adv, recon_tag, vfrac_recon_tag, rsolver_tag,
-                               store_vf, mat_strength, do_viscosity, do_lm_correction);
+                               store_vf, mat_strength, do_viscosity, do_lm_correction, lm_dir);
 
   return TaskStatus::complete;
 }

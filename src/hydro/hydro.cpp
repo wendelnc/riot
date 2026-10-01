@@ -145,6 +145,9 @@ std::shared_ptr<StateDescriptor> Initialize(ParameterInput *pin,
   }
   params.Add("lm_correction", lm_correction);
 
+  int lm_dir = pin->GetOrAddInteger("hydro", "lm_dir", 1, "1D or 3D Directional Thornber LM Correction");
+  params.Add("lm_dir", lm_dir);
+
   // Bulk density
   Metadata m = Metadata({Metadata::Cell, Metadata::Intensive, Metadata::Conserved,
                          Metadata::Derived, Metadata::OneCopy});
